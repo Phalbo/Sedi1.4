@@ -137,17 +137,65 @@ function fdr_sede_map_callback($post) {
     ?>
     <p>
         <strong>Latitudine</strong><br>
-        <input type="text" name="fdr_lat" value="<?php echo esc_attr($lat); ?>" placeholder="es. 41.9028" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;margin-top:4px">
+        <input type="text" name="fdr_lat" id="fdr_lat" value="<?php echo esc_attr($lat); ?>" placeholder="es. 41.9028" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;margin-top:4px">
     </p>
     <p>
         <strong>Longitudine</strong><br>
-        <input type="text" name="fdr_lng" value="<?php echo esc_attr($lng); ?>" placeholder="es. 12.4964" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;margin-top:4px">
+        <input type="text" name="fdr_lng" id="fdr_lng" value="<?php echo esc_attr($lng); ?>" placeholder="es. 12.4964" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;margin-top:4px">
     </p>
-    <p style="font-size:12px;color:#555;margin-top:6px;background:#f9f9f9;padding:8px;border-radius:4px">
-        📌 Non conosci le coordinate? Cercale qui:<br>
-        <a href="https://www.latlong.net/" target="_blank" style="color:#004A99;font-weight:600">→ LatLong.net</a> &nbsp;|&nbsp;
-        <a href="https://nominatim.openstreetmap.org/" target="_blank" style="color:#004A99;font-weight:600">→ OpenStreetMap</a>
+    <p>
+        <button type="button" id="fdr_geocode_btn" class="button" style="background:#004A99;color:white;border-color:#003a7a;width:100%;justify-content:center">
+            📍 Ottieni coordinate dall'indirizzo
+        </button>
+        <span id="fdr_geocode_msg" style="display:none;font-size:12px;margin-top:6px;display:block"></span>
     </p>
+    <script>
+    document.getElementById('fdr_geocode_btn').addEventListener('click', function() {
+        var address = (document.querySelector('[name="fdr_address"]') || {}).value || '';
+        var zip     = (document.querySelector('[name="fdr_zip"]')     || {}).value || '';
+        var city    = (document.querySelector('[name="fdr_city"]')    || {}).value || '';
+        var query   = [address, zip, city, 'Italia'].filter(Boolean).join(', ');
+        var msg     = document.getElementById('fdr_geocode_msg');
+        var btn     = this;
+
+        if (!address && !city) {
+            msg.style.color = '#d63638';
+            msg.textContent = '⚠️ Compila prima Indirizzo e Città.';
+            msg.style.display = 'block';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = '⏳ Ricerca in corso…';
+        msg.style.display = 'none';
+
+        fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(query), {
+            headers: { 'Accept-Language': 'it', 'User-Agent': 'FDR-Sedi-Plugin/1.4' }
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            btn.disabled = false;
+            btn.textContent = '📍 Ottieni coordinate dall\'indirizzo';
+            if (data && data.length > 0) {
+                document.getElementById('fdr_lat').value = parseFloat(data[0].lat).toFixed(7);
+                document.getElementById('fdr_lng').value = parseFloat(data[0].lon).toFixed(7);
+                msg.style.color = '#2e7d32';
+                msg.textContent = '✅ Coordinate trovate: ' + data[0].display_name.split(',').slice(0,3).join(',');
+            } else {
+                msg.style.color = '#d63638';
+                msg.textContent = '❌ Indirizzo non trovato. Prova a semplificare (solo via e città).';
+            }
+            msg.style.display = 'block';
+        })
+        .catch(function() {
+            btn.disabled = false;
+            btn.textContent = '📍 Ottieni coordinate dall\'indirizzo';
+            msg.style.color = '#d63638';
+            msg.textContent = '❌ Errore di rete. Riprova.';
+            msg.style.display = 'block';
+        });
+    });
+    </script>
     <hr style="margin:12px 0;border-color:#eee">
     <p style="font-weight:600;color:#004A99;margin-bottom:8px">Tipo di sede</p>
     <p>
