@@ -100,6 +100,7 @@ function fdr_sedi_shortcode($atts) {
                 'website'      => get_post_meta($p->ID, '_fdr_website', true),
                 'gmaps'        => 'https://maps.google.com/?q=' . $gmaps_query,
                 'orari'        => trim($orari),
+                'note'         => get_post_meta($p->ID, '_fdr_description', true),
                 'lat'          => (float)$lat,
                 'lng'          => (float)$lng,
                 'premium'      => $premium,
@@ -247,6 +248,7 @@ function fdr_sedi_shortcode($atts) {
             if (s.email)   h += '<div class="fdr-popup-row">✉️ <a href="mailto:' + s.email + '" class="fdr-popup-link">' + s.email + '</a></div>';
             if (s.website && s.website !== '') h += '<div class="fdr-popup-row">🌐 <a href="' + s.website + '" target="_blank" class="fdr-popup-link">Sito web</a></div>';
             if (s.orari)   h += '<div class="fdr-popup-row">🕐 ' + s.orari + '</div>';
+            if (s.note)    h += '<div class="fdr-popup-row"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#4caf50;flex-shrink:0;margin-top:4px"></span><span style="color:#555;font-style:italic">' + s.note + '</span></div>';
             h += '<a href="' + s.gmaps + '" target="_blank" class="fdr-popup-gmaps">📍 Apri in Google Maps</a>';
             return h;
         }
