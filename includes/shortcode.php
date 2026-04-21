@@ -5,9 +5,9 @@
  */
 add_shortcode('fdr_sedi', 'fdr_sedi_shortcode');
 
-// Invalida la cache quando una sede viene salvata o cancellata
-add_action('save_post_fdr_sede',  'fdr_sedi_clear_cache');
-add_action('delete_post',         'fdr_sedi_clear_cache_on_delete');
+add_action('save_post_fdr_sede', 'fdr_sedi_clear_cache');
+add_action('delete_post',        'fdr_sedi_clear_cache_on_delete');
+
 function fdr_sedi_clear_cache() {
     delete_transient('fdr_sedi_json');
 }
@@ -18,124 +18,123 @@ function fdr_sedi_clear_cache_on_delete($post_id) {
 function fdr_sedi_shortcode($atts) {
     $atts = shortcode_atts(['regione' => ''], $atts);
 
-    // Cache solo per shortcode senza filtro regione
-    $use_cache = empty($atts['regione']);
+    $use_cache       = empty($atts['regione']);
+    $sedi_json       = null;
+    $count           = 0;
+    $regioni_options = '';
+
     if ($use_cache) {
         $cached = get_transient('fdr_sedi_json');
-        if ($cached !== false) {
-            $sedi_json = $cached['json'];
-            $count     = $cached['count'];
+        if (is_array($cached)) {
+            $sedi_json       = $cached['json'];
+            $count           = $cached['count'];
             $regioni_options = $cached['regioni'];
-            // salta la query e vai al rendering
-            goto render;
         }
     }
 
-    $args = [
-        'post_type'      => 'fdr_sede',
-        'posts_per_page' => -1,
-        'post_status'    => 'publish',
-        'orderby'        => 'title',
-        'order'          => 'ASC',
-    ];
+    if ($sedi_json === null) {
+        $args = [
+            'post_type'      => 'fdr_sede',
+            'posts_per_page' => -1,
+            'post_status'    => 'publish',
+            'orderby'        => 'title',
+            'order'          => 'ASC',
+        ];
 
-    if (!empty($atts['regione'])) {
-        $args['tax_query'] = [[
-            'taxonomy' => 'fdr_regione',
-            'field'    => 'slug',
-            'terms'    => $atts['regione'],
-        ]];
-    }
+        if (!empty($atts['regione'])) {
+            $args['tax_query'] = [[
+                'taxonomy' => 'fdr_regione',
+                'field'    => 'slug',
+                'terms'    => $atts['regione'],
+            ]];
+        }
 
-    $posts = get_posts($args);
+        $posts = get_posts($args);
+        $sedi  = [];
 
-    $sedi = [];
-    foreach ($posts as $p) {
-        $lat = get_post_meta($p->ID, '_fdr_lat', true);
-        $lng = get_post_meta($p->ID, '_fdr_lng', true);
-        if (!$lat || !$lng) continue;
+        foreach ($posts as $p) {
+            $lat = get_post_meta($p->ID, '_fdr_lat', true);
+            $lng = get_post_meta($p->ID, '_fdr_lng', true);
+            if (!$lat || !$lng) continue;
 
-        $giorni     = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-        $giorni_ita = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
-        $orari = '';
-        foreach ($giorni as $i => $g) {
-            $o1 = get_post_meta($p->ID, '_fdr_'.$g.'_open',  true);
-            $c1 = get_post_meta($p->ID, '_fdr_'.$g.'_close', true);
-            $o2 = get_post_meta($p->ID, '_fdr_'.$g.'_open2', true);
-            $c2 = get_post_meta($p->ID, '_fdr_'.$g.'_close2',true);
-            if ($o1 && $c1) {
-                $riga = $giorni_ita[$i].': '.$o1.'-'.$c1;
-                if ($o2 && $c2) $riga .= ' / '.$o2.'-'.$c2;
-                $orari .= $riga.' ';
+            $giorni     = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+            $giorni_ita = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
+            $orari = '';
+            foreach ($giorni as $i => $g) {
+                $o1 = get_post_meta($p->ID, '_fdr_'.$g.'_open',  true);
+                $c1 = get_post_meta($p->ID, '_fdr_'.$g.'_close', true);
+                $o2 = get_post_meta($p->ID, '_fdr_'.$g.'_open2', true);
+                $c2 = get_post_meta($p->ID, '_fdr_'.$g.'_close2',true);
+                if ($o1 && $c1) {
+                    $riga = $giorni_ita[$i].': '.$o1.'-'.$c1;
+                    if ($o2 && $c2) $riga .= ' / '.$o2.'-'.$c2;
+                    $orari .= $riga.' ';
+                }
+            }
+
+            $regione_terms = get_the_terms($p->ID, 'fdr_regione');
+            $regione = ($regione_terms && !is_wp_error($regione_terms))
+                ? $regione_terms[0]->name
+                : get_post_meta($p->ID, '_fdr_region', true);
+
+            $address = get_post_meta($p->ID, '_fdr_address', true);
+            $city    = get_post_meta($p->ID, '_fdr_city', true);
+            $premium = (int) get_post_meta($p->ID, '_fdr_premium', true);
+            $name    = $p->post_title;
+
+            $nazionale    = (int) get_post_meta($p->ID, '_fdr_nazionale', true);
+            $is_nazionale = ($nazionale === 1) || ($premium === 1 && stripos($name, 'Nazionale') !== false);
+
+            $gmaps_query = urlencode(trim($address . ' ' . $city));
+
+            $sedi[] = [
+                'id'           => $p->ID,
+                'name'         => $name,
+                'company'      => get_post_meta($p->ID, '_fdr_company', true),
+                'address'      => $address,
+                'city'         => $city,
+                'zip'          => get_post_meta($p->ID, '_fdr_zip', true),
+                'region'       => $regione,
+                'tel'          => get_post_meta($p->ID, '_fdr_telephone', true),
+                'email'        => get_post_meta($p->ID, '_fdr_email', true),
+                'website'      => get_post_meta($p->ID, '_fdr_website', true),
+                'gmaps'        => 'https://maps.google.com/?q=' . $gmaps_query,
+                'orari'        => trim($orari),
+                'lat'          => (float)$lat,
+                'lng'          => (float)$lng,
+                'premium'      => $premium,
+                'is_nazionale' => $is_nazionale,
+                'pubblica'     => (int) get_post_meta($p->ID, '_fdr_pubblica', true),
+                'url'          => get_permalink($p->ID),
+            ];
+        }
+
+        usort($sedi, function($a, $b) {
+            if ($a['is_nazionale'] !== $b['is_nazionale']) return $b['is_nazionale'] - $a['is_nazionale'];
+            if ($a['premium']      !== $b['premium'])      return $b['premium']      - $a['premium'];
+            return strcmp($a['name'], $b['name']);
+        });
+
+        $regioni_terms = get_terms(['taxonomy' => 'fdr_regione', 'hide_empty' => true, 'orderby' => 'name']);
+        $regioni_options = '';
+        if (!is_wp_error($regioni_terms)) {
+            foreach ($regioni_terms as $term) {
+                $regioni_options .= '<option value="'.esc_attr($term->name).'">'.esc_html($term->name).'</option>';
             }
         }
 
-        $regione_terms = get_the_terms($p->ID, 'fdr_regione');
-        $regione = ($regione_terms && !is_wp_error($regione_terms))
-            ? $regione_terms[0]->name
-            : get_post_meta($p->ID, '_fdr_region', true);
+        $sedi_json = json_encode($sedi, JSON_UNESCAPED_UNICODE);
+        $count     = count($sedi);
 
-        $address = get_post_meta($p->ID, '_fdr_address', true);
-        $city    = get_post_meta($p->ID, '_fdr_city', true);
-        $website = get_post_meta($p->ID, '_fdr_website', true);
-        $premium = (int) get_post_meta($p->ID, '_fdr_premium', true);
-        $name    = $p->post_title;
-
-        $nazionale    = (int) get_post_meta($p->ID, '_fdr_nazionale', true);
-        $is_nazionale = ($nazionale === 1) || ($premium === 1 && stripos($name, 'Nazionale') !== false);
-
-        $gmaps_query = urlencode(trim($address . ' ' . $city));
-
-        $sedi[] = [
-            'id'           => $p->ID,
-            'name'         => $name,
-            'company'      => get_post_meta($p->ID, '_fdr_company', true),
-            'address'      => $address,
-            'city'         => $city,
-            'zip'          => get_post_meta($p->ID, '_fdr_zip', true),
-            'region'       => $regione,
-            'tel'          => get_post_meta($p->ID, '_fdr_telephone', true),
-            'email'        => get_post_meta($p->ID, '_fdr_email', true),
-            'website'      => $website,
-            'gmaps'        => 'https://maps.google.com/?q=' . $gmaps_query,
-            'orari'        => trim($orari),
-            'lat'          => (float)$lat,
-            'lng'          => (float)$lng,
-            'premium'      => $premium,
-            'is_nazionale' => $is_nazionale,
-            'pubblica'     => (int) get_post_meta($p->ID, '_fdr_pubblica', true),
-            'url'          => get_permalink($p->ID),
-        ];
-    }
-
-    // Ordina: Nazionale prima, poi regionali, poi alfabetiche
-    usort($sedi, function($a, $b) {
-        if ($a['is_nazionale'] !== $b['is_nazionale']) return $b['is_nazionale'] - $a['is_nazionale'];
-        if ($a['premium']      !== $b['premium'])      return $b['premium']      - $a['premium'];
-        return strcmp($a['name'], $b['name']);
-    });
-
-    // Regioni per il filtro dropdown
-    $regioni_terms = get_terms(['taxonomy' => 'fdr_regione', 'hide_empty' => true, 'orderby' => 'name']);
-    $regioni_options = '';
-    if (!is_wp_error($regioni_terms)) {
-        foreach ($regioni_terms as $term) {
-            $regioni_options .= '<option value="'.esc_attr($term->name).'">'.esc_html($term->name).'</option>';
+        if ($use_cache) {
+            set_transient('fdr_sedi_json', [
+                'json'    => $sedi_json,
+                'count'   => $count,
+                'regioni' => $regioni_options,
+            ], 12 * HOUR_IN_SECONDS);
         }
     }
 
-    $sedi_json = json_encode($sedi, JSON_UNESCAPED_UNICODE);
-    $count     = count($sedi);
-
-    if ($use_cache) {
-        set_transient('fdr_sedi_json', [
-            'json'    => $sedi_json,
-            'count'   => $count,
-            'regioni' => $regioni_options,
-        ], 12 * HOUR_IN_SECONDS);
-    }
-
-    render:
     ob_start();
     ?>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
