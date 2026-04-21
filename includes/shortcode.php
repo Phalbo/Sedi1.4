@@ -1,8 +1,36 @@
 <?php
+/**
+ * FDR Sedi — Shortcode [fdr_sedi]
+ * Cache: transient 12h, invalidata al salvataggio/cancellazione di qualsiasi sede.
+ */
 add_shortcode('fdr_sedi', 'fdr_sedi_shortcode');
+
+// Invalida la cache quando una sede viene salvata o cancellata
+add_action('save_post_fdr_sede',  'fdr_sedi_clear_cache');
+add_action('delete_post',         'fdr_sedi_clear_cache_on_delete');
+function fdr_sedi_clear_cache() {
+    delete_transient('fdr_sedi_json');
+}
+function fdr_sedi_clear_cache_on_delete($post_id) {
+    if (get_post_type($post_id) === 'fdr_sede') delete_transient('fdr_sedi_json');
+}
+
 function fdr_sedi_shortcode($atts) {
     $atts = shortcode_atts(['regione' => ''], $atts);
-    
+
+    // Cache solo per shortcode senza filtro regione
+    $use_cache = empty($atts['regione']);
+    if ($use_cache) {
+        $cached = get_transient('fdr_sedi_json');
+        if ($cached !== false) {
+            $sedi_json = $cached['json'];
+            $count     = $cached['count'];
+            $regioni_options = $cached['regioni'];
+            // salta la query e vai al rendering
+            goto render;
+        }
+    }
+
     $args = [
         'post_type'      => 'fdr_sede',
         'posts_per_page' => -1,
@@ -10,7 +38,7 @@ function fdr_sedi_shortcode($atts) {
         'orderby'        => 'title',
         'order'          => 'ASC',
     ];
-    
+
     if (!empty($atts['regione'])) {
         $args['tax_query'] = [[
             'taxonomy' => 'fdr_regione',
@@ -18,39 +46,46 @@ function fdr_sedi_shortcode($atts) {
             'terms'    => $atts['regione'],
         ]];
     }
-    
+
     $posts = get_posts($args);
-    
+
     $sedi = [];
     foreach ($posts as $p) {
         $lat = get_post_meta($p->ID, '_fdr_lat', true);
         $lng = get_post_meta($p->ID, '_fdr_lng', true);
         if (!$lat || !$lng) continue;
-        
-        $giorni = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+
+        $giorni     = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
         $giorni_ita = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
         $orari = '';
         foreach ($giorni as $i => $g) {
-            $o1 = get_post_meta($p->ID, '_fdr_'.$g.'_open', true);
+            $o1 = get_post_meta($p->ID, '_fdr_'.$g.'_open',  true);
             $c1 = get_post_meta($p->ID, '_fdr_'.$g.'_close', true);
-            if ($o1 && $c1) $orari .= $giorni_ita[$i].': '.$o1.'-'.$c1.' ';
+            $o2 = get_post_meta($p->ID, '_fdr_'.$g.'_open2', true);
+            $c2 = get_post_meta($p->ID, '_fdr_'.$g.'_close2',true);
+            if ($o1 && $c1) {
+                $riga = $giorni_ita[$i].': '.$o1.'-'.$c1;
+                if ($o2 && $c2) $riga .= ' / '.$o2.'-'.$c2;
+                $orari .= $riga.' ';
+            }
         }
-        
+
         $regione_terms = get_the_terms($p->ID, 'fdr_regione');
-        $regione = ($regione_terms && !is_wp_error($regione_terms)) ? $regione_terms[0]->name : get_post_meta($p->ID, '_fdr_region', true);
-        
+        $regione = ($regione_terms && !is_wp_error($regione_terms))
+            ? $regione_terms[0]->name
+            : get_post_meta($p->ID, '_fdr_region', true);
+
         $address = get_post_meta($p->ID, '_fdr_address', true);
         $city    = get_post_meta($p->ID, '_fdr_city', true);
         $website = get_post_meta($p->ID, '_fdr_website', true);
         $premium = (int) get_post_meta($p->ID, '_fdr_premium', true);
         $name    = $p->post_title;
-        
-        // Nazionale = premium E nome contiene "Nazionale"
-        $nazionale = (int) get_post_meta($p->ID, '_fdr_nazionale', true);
+
+        $nazionale    = (int) get_post_meta($p->ID, '_fdr_nazionale', true);
         $is_nazionale = ($nazionale === 1) || ($premium === 1 && stripos($name, 'Nazionale') !== false);
-        
+
         $gmaps_query = urlencode(trim($address . ' ' . $city));
-        
+
         $sedi[] = [
             'id'           => $p->ID,
             'name'         => $name,
@@ -72,15 +107,15 @@ function fdr_sedi_shortcode($atts) {
             'url'          => get_permalink($p->ID),
         ];
     }
-    
-    // Ordina: Nazionale prima, poi regionali, poi tutte le altre alfabetiche
+
+    // Ordina: Nazionale prima, poi regionali, poi alfabetiche
     usort($sedi, function($a, $b) {
         if ($a['is_nazionale'] !== $b['is_nazionale']) return $b['is_nazionale'] - $a['is_nazionale'];
-        if ($a['premium'] !== $b['premium']) return $b['premium'] - $a['premium'];
+        if ($a['premium']      !== $b['premium'])      return $b['premium']      - $a['premium'];
         return strcmp($a['name'], $b['name']);
     });
-    
-    // Regioni per filtro
+
+    // Regioni per il filtro dropdown
     $regioni_terms = get_terms(['taxonomy' => 'fdr_regione', 'hide_empty' => true, 'orderby' => 'name']);
     $regioni_options = '';
     if (!is_wp_error($regioni_terms)) {
@@ -88,16 +123,25 @@ function fdr_sedi_shortcode($atts) {
             $regioni_options .= '<option value="'.esc_attr($term->name).'">'.esc_html($term->name).'</option>';
         }
     }
-    
+
     $sedi_json = json_encode($sedi, JSON_UNESCAPED_UNICODE);
-    $count = count($sedi);
-    
+    $count     = count($sedi);
+
+    if ($use_cache) {
+        set_transient('fdr_sedi_json', [
+            'json'    => $sedi_json,
+            'count'   => $count,
+            'regioni' => $regioni_options,
+        ], 12 * HOUR_IN_SECONDS);
+    }
+
+    render:
     ob_start();
     ?>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css"/>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css"/>
-    
+
     <style>
     .fdr-sedi-wrapper { font-family: 'Inter', Arial, sans-serif; max-width: 100%; }
     .fdr-sedi-controls { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
@@ -136,7 +180,7 @@ function fdr_sedi_shortcode($atts) {
         #fdr-map { height: 400px !important; }
     }
     </style>
-    
+
     <div class="fdr-sedi-wrapper">
         <div class="fdr-sedi-controls">
             <input type="text" class="fdr-sedi-search" id="fdrSearch" placeholder="🔍 Cerca per città, nome o indirizzo...">
@@ -151,7 +195,7 @@ function fdr_sedi_shortcode($atts) {
             <div id="fdr-map" style="height:620px"></div>
         </div>
     </div>
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
     <script>
@@ -160,12 +204,12 @@ function fdr_sedi_shortcode($atts) {
         let filtered = [...SEDI];
         let activeIdx = -1;
         let allMarkers = [];
-        
+
         const map = L.map('fdr-map').setView([42.5, 12.5], 6);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors', maxZoom: 18
         }).addTo(map);
-        
+
         const clusterGroup = L.markerClusterGroup({
             maxClusterRadius: 40,
             iconCreateFunction: function(cluster) {
@@ -175,49 +219,51 @@ function fdr_sedi_shortcode($atts) {
                 });
             }
         });
-        
+
         const blueIcon = L.divIcon({
             html: '<div style="background:#004A99;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>',
             iconSize: [14,14], iconAnchor: [7,7], popupAnchor: [0,-8], className: ''
         });
-        
+
         const goldIcon = L.divIcon({
             html: '<div style="background:#FDC513;width:18px;height:18px;border-radius:50%;border:2px solid #004A99;box-shadow:0 2px 6px rgba(0,0,0,0.4)"></div>',
             iconSize: [18,18], iconAnchor: [9,9], popupAnchor: [0,-10], className: ''
         });
-        
+
         const nazionaleIcon = L.divIcon({
             html: '<div style="background:#FDC513;width:22px;height:22px;border-radius:50%;border:3px solid #004A99;box-shadow:0 2px 8px rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;font-size:11px">★</div>',
             iconSize: [22,22], iconAnchor: [11,11], popupAnchor: [0,-12], className: ''
         });
-        
+
         function makePopup(s) {
             let h = '';
             if (s.is_nazionale) h += '<div class="fdr-popup-badge">★ Sede Nazionale</div><br>';
             else if (s.premium) h += '<div class="fdr-popup-badge fdr-popup-badge-reg">Sede Regionale</div><br>';
-            var nameHtml = s.pubblica ? '<a href="' + s.url + '" style="color:#004A99;text-decoration:none;font-weight:700">' + (s.company||s.name) + '</a>' : (s.company||s.name);
+            var nameHtml = s.pubblica
+                ? '<a href="' + s.url + '" style="color:#004A99;text-decoration:none;font-weight:700">' + (s.company||s.name) + '</a>'
+                : (s.company||s.name);
             h += '<div class="fdr-popup-name">' + nameHtml + '</div>';
-            if (s.address) h += '<div class="fdr-popup-row">📍 ' + s.address + ', ' + s.zip + ' ' + s.city + '</div>';
-            if (s.tel) h += '<div class="fdr-popup-row">📞 <a href="tel:' + s.tel + '" class="fdr-popup-link">' + s.tel + '</a></div>';
-            if (s.email) h += '<div class="fdr-popup-row">✉️ <a href="mailto:' + s.email + '" class="fdr-popup-link">' + s.email + '</a></div>';
+            if (s.address) h += '<div class="fdr-popup-row">📍 ' + s.address + (s.zip ? ', ' + s.zip : '') + ' ' + s.city + '</div>';
+            if (s.tel)     h += '<div class="fdr-popup-row">📞 <a href="tel:' + s.tel + '" class="fdr-popup-link">' + s.tel + '</a></div>';
+            if (s.email)   h += '<div class="fdr-popup-row">✉️ <a href="mailto:' + s.email + '" class="fdr-popup-link">' + s.email + '</a></div>';
             if (s.website && s.website !== '') h += '<div class="fdr-popup-row">🌐 <a href="' + s.website + '" target="_blank" class="fdr-popup-link">Sito web</a></div>';
-            if (s.orari) h += '<div class="fdr-popup-row">🕐 ' + s.orari + '</div>';
+            if (s.orari)   h += '<div class="fdr-popup-row">🕐 ' + s.orari + '</div>';
             h += '<a href="' + s.gmaps + '" target="_blank" class="fdr-popup-gmaps">📍 Apri in Google Maps</a>';
             return h;
         }
-        
+
         function getItemClass(s) {
             if (s.is_nazionale) return 'fdr-sede-item fdr-nazionale';
-            if (s.premium) return 'fdr-sede-item fdr-regionale';
+            if (s.premium)      return 'fdr-sede-item fdr-regionale';
             return 'fdr-sede-item';
         }
-        
+
         function getBadge(s) {
             if (s.is_nazionale) return '<span class="fdr-badge-nazionale">★ Nazionale</span>';
-            if (s.premium) return '<span class="fdr-badge-regionale">Regionale</span>';
+            if (s.premium)      return '<span class="fdr-badge-regionale">Regionale</span>';
             return '';
         }
-        
+
         function renderList() {
             const list = document.getElementById('fdrList');
             document.getElementById('fdrCount').textContent = filtered.length + ' sedi';
@@ -226,20 +272,27 @@ function fdr_sedi_shortcode($atts) {
                 return;
             }
             list.innerHTML = filtered.map((s,i) =>
-                '<div class="' + (i===activeIdx ? getItemClass(s).replace('fdr-sede-item','fdr-sede-item fdr-active') : getItemClass(s)) + '" onclick="fdrSelect(' + i + ')">' +
-                '<div class="fdr-sede-name">' + (s.pubblica ? '<a href="' + s.url + '" style="color:#004A99;text-decoration:none;font-weight:700">' + (s.company||s.name||s.city) + '</a>' : '<span>' + (s.company||s.name||s.city) + '</span>') + ' ' + getBadge(s) + '</div>' +
+                '<div class="' + (i===activeIdx
+                    ? getItemClass(s).replace('fdr-sede-item','fdr-sede-item fdr-active')
+                    : getItemClass(s)) + '" onclick="fdrSelect(' + i + ')">' +
+                '<div class="fdr-sede-name">' +
+                    (s.pubblica
+                        ? '<a href="' + s.url + '" style="color:#004A99;text-decoration:none;font-weight:700">' + (s.company||s.name||s.city) + '</a>'
+                        : '<span>' + (s.company||s.name||s.city) + '</span>') +
+                    ' ' + getBadge(s) +
+                '</div>' +
                 '<div class="fdr-sede-city">' + s.city + (s.address ? ' · ' + s.address : '') + '</div>' +
-                '<span class="fdr-sede-tag">' + s.region + '</span>' +
+                '<span class="fdr-sede-tag">' + (s.region||'') + '</span>' +
                 '</div>'
             ).join('');
         }
-        
+
         function getIcon(s) {
             if (s.is_nazionale) return nazionaleIcon;
-            if (s.premium) return goldIcon;
+            if (s.premium)      return goldIcon;
             return blueIcon;
         }
-        
+
         function renderMarkers() {
             clusterGroup.clearLayers();
             allMarkers = filtered.map((s,i) => {
@@ -251,7 +304,7 @@ function fdr_sedi_shortcode($atts) {
             clusterGroup.addLayers(allMarkers);
             map.addLayer(clusterGroup);
         }
-        
+
         window.fdrSelect = function(i, panMap) {
             activeIdx = i;
             const s = filtered[i];
@@ -263,14 +316,14 @@ function fdr_sedi_shortcode($atts) {
                 allMarkers[i].openPopup();
             }
         };
-        
+
         function applyFilters() {
             const q = document.getElementById('fdrSearch').value.toLowerCase();
             const r = document.getElementById('fdrRegione').value;
             filtered = SEDI.filter(s => {
-                const mq = !q || 
-                    s.name.toLowerCase().includes(q) || 
-                    s.city.toLowerCase().includes(q) || 
+                const mq = !q ||
+                    s.name.toLowerCase().includes(q) ||
+                    s.city.toLowerCase().includes(q) ||
                     (s.company||'').toLowerCase().includes(q) ||
                     (s.address||'').toLowerCase().includes(q);
                 const mr = !r || s.region === r;
@@ -280,10 +333,10 @@ function fdr_sedi_shortcode($atts) {
             renderList();
             renderMarkers();
         }
-        
+
         document.getElementById('fdrSearch').addEventListener('input', applyFilters);
         document.getElementById('fdrRegione').addEventListener('change', applyFilters);
-        
+
         renderList();
         renderMarkers();
     })();
