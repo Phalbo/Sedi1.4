@@ -43,6 +43,9 @@ function fdr_sedi_process_import() {
             $lng_raw = isset($data['lng']) ? str_replace(',', '.', trim($data['lng'])) : '0';
             $lat = floatval($lat_raw);
             $lng = floatval($lng_raw);
+            // Sovrascrivi i valori corretti nel dataset prima del loop campi
+            $data['lat'] = $lat_raw;
+            $data['lng'] = $lng_raw;
             
             // Crea o aggiorna il post
             $existing = get_posts([
