@@ -55,7 +55,9 @@ function fdr_sede_info_callback($post) {
         $type = $f === 'email' ? 'email' : ($f === 'website' ? 'url' : 'text');
         echo '<tr><td style="padding:6px 8px;width:160px;font-weight:600;color:#444;vertical-align:top;padding-top:10px">'.$labels[$i].'</td>';
         if ($f === 'description') {
-            echo '<td style="padding:6px 8px"><textarea name="fdr_'.$f.'" rows="2" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px">'.esc_textarea($val).'</textarea></td></tr>';
+            echo '<td style="padding:6px 8px"><textarea name="fdr_'.$f.'" rows="2" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px">'.esc_textarea($val).'</textarea>'
+               . '<p style="margin:4px 0 0;font-size:11px;color:#888">💡 Per gli orari usa la sezione <strong>Orari di apertura</strong> qui sotto — non inserirli nelle note per evitare problemi di visualizzazione sul sito.</p>'
+               . '</td></tr>';
         } else {
             echo '<td style="padding:6px 8px"><input type="'.$type.'" name="fdr_'.$f.'" value="'.esc_attr($val).'" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px"></td></tr>';
         }

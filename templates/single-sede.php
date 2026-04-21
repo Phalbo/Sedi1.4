@@ -126,6 +126,12 @@ $display_name = $company ?: $name;
                 <?php foreach ($orari as $o): ?><li><?php echo esc_html($o); ?></li><?php endforeach; ?>
             </ul>
             <?php endif; ?>
+            <?php if ($desc): ?>
+            <div class="fdr-row" style="margin-top:10px;align-items:flex-start">
+                <span class="fdr-icon" style="padding-top:5px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#4caf50"></span></span>
+                <span style="color:#555;font-style:italic;font-size:13px"><?php echo esc_html($desc); ?></span>
+            </div>
+            <?php endif; ?>
             <a href="<?php echo esc_url($gmaps); ?>" target="_blank" class="fdr-gmaps-btn">📍 Apri in Google Maps</a>
         </div>
 
