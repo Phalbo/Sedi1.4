@@ -56,6 +56,26 @@ function fdr_sede_single_template($template) {
     return $template;
 }
 
+// ── TITOLI UNIVOCI ───────────────────────────────────────────
+// Intercetta insert e update prima del salvataggio e rende il titolo univoco.
+// Funziona sia per l'import CSV (wp_insert_post senza ID) che per la creazione
+// manuale da backend (wp_update_post su auto-draft). Non tocca i post in trash
+// né gli auto-draft privi di titolo significativo.
+add_filter('wp_insert_post_data', 'fdr_sedi_unique_title_filter', 10, 2);
+function fdr_sedi_unique_title_filter($data, $postarr) {
+    if ($data['post_type'] !== 'fdr_sede') return $data;
+    if (empty($data['post_title']) || $data['post_status'] === 'auto-draft') return $data;
+
+    $exclude_id = isset($postarr['ID']) ? (int) $postarr['ID'] : 0;
+    $unique = fdr_unique_sede_title($data['post_title'], $exclude_id);
+
+    if ($unique !== $data['post_title']) {
+        $data['post_title'] = $unique;
+        // post_name viene gestito da wp_unique_post_slug, non serve impostarlo
+    }
+    return $data;
+}
+
 // ── RUOLO EDITOR SEDI ────────────────────────────────────────
 add_action('init', 'fdr_sedi_register_role');
 function fdr_sedi_register_role() {

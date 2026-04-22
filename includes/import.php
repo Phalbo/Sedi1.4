@@ -47,15 +47,9 @@ function fdr_sedi_process_import() {
             $data['lat'] = $lat_raw;
             $data['lng'] = $lng_raw;
             
-            // Crea o aggiorna il post
-            $existing = get_posts([
-                'post_type'  => 'fdr_sede',
-                'title'      => $name,
-                'post_status'=> 'publish',
-                'numberposts'=> 1,
-            ]);
-            
-            $post_id = !empty($existing) ? $existing[0]->ID : wp_insert_post([
+            // Crea sempre un post nuovo — il titolo univoco viene assegnato
+            // automaticamente dal filter wp_insert_post_data (MODENA → MODENA (2) ecc.)
+            $post_id = wp_insert_post([
                 'post_title'  => $name,
                 'post_type'   => 'fdr_sede',
                 'post_status' => 'publish',
