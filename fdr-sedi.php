@@ -3,7 +3,7 @@
  * Plugin Name:  FDR Sedi — Federconsumatori
  * Plugin URI:   https://www.ares20.it
  * Description:  Gestione sedi Federconsumatori con mappa interattiva, ricerca, filtro regionale e pagine sede dedicate. Plugin sviluppato su misura da Ares 2.0 s.r.l.
- * Version:      1.4
+ * Version:      1.5
  * Author:       Ares 2.0 s.r.l.
  * Author URI:   https://www.ares20.it
  * Text Domain:  fdr-sedi
@@ -24,6 +24,7 @@ function fdr_sedi_plugin_row_meta($links, $file) {
     return $links;
 }
 
+require_once FDR_SEDI_PATH . 'includes/utils.php';
 require_once FDR_SEDI_PATH . 'includes/post-type.php';
 require_once FDR_SEDI_PATH . 'includes/meta-boxes.php';
 require_once FDR_SEDI_PATH . 'includes/shortcode.php';
