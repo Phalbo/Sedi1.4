@@ -111,7 +111,7 @@ function fdr_sedi_process_delete_all() {
     }
 
     // Svuota cache transient
-    delete_transient('fdr_sedi_json');
+    fdr_sedi_clear_cache();
 
     wp_redirect(admin_url('admin.php?page=fdr-sedi-import&deleted=' . $deleted));
     exit;

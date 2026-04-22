@@ -217,24 +217,158 @@ function fdr_sede_map_callback($post) {
 }
 
 // ── ORARI ─────────────────────────────────────────────────────
-function fdr_sede_orari_callback($post) {
-    $giorni     = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-    $giorni_ita = ['Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica'];
-    echo '<table style="width:100%;border-collapse:collapse">';
-    echo '<tr><th style="text-align:left;padding:4px 8px;color:#004A99">Giorno</th><th style="padding:4px 8px;color:#004A99">Apertura</th><th style="padding:4px 8px;color:#004A99">Chiusura</th><th style="padding:4px 8px;color:#004A99">Apertura 2ª</th><th style="padding:4px 8px;color:#004A99">Chiusura 2ª</th></tr>';
-    foreach ($giorni as $i => $g) {
-        $o1 = get_post_meta($post->ID, '_fdr_'.$g.'_open',   true);
-        $c1 = get_post_meta($post->ID, '_fdr_'.$g.'_close',  true);
-        $o2 = get_post_meta($post->ID, '_fdr_'.$g.'_open2',  true);
-        $c2 = get_post_meta($post->ID, '_fdr_'.$g.'_close2', true);
-        echo '<tr><td style="padding:4px 8px;font-weight:600">'.$giorni_ita[$i].'</td>';
-        echo '<td style="padding:4px 8px"><input type="time" name="fdr_'.$g.'_open"   value="'.esc_attr($o1).'" style="border:1px solid #ddd;border-radius:4px;padding:4px"></td>';
-        echo '<td style="padding:4px 8px"><input type="time" name="fdr_'.$g.'_close"  value="'.esc_attr($c1).'" style="border:1px solid #ddd;border-radius:4px;padding:4px"></td>';
-        echo '<td style="padding:4px 8px"><input type="time" name="fdr_'.$g.'_open2"  value="'.esc_attr($o2).'" style="border:1px solid #ddd;border-radius:4px;padding:4px"></td>';
-        echo '<td style="padding:4px 8px"><input type="time" name="fdr_'.$g.'_close2" value="'.esc_attr($c2).'" style="border:1px solid #ddd;border-radius:4px;padding:4px"></td>';
-        echo '</tr>';
+function fdr_sede_orari_callback( $post ) {
+    $giorni      = [ 'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday' ];
+    $giorni_ita  = [ 'Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica' ];
+
+    // ── Leggi meta esistenti ──
+    $day_hours = [];
+    $has_any   = false;
+    foreach ( $giorni as $g ) {
+        $h = [
+            'open'   => get_post_meta( $post->ID, '_fdr_'.$g.'_open',   true ),
+            'close'  => get_post_meta( $post->ID, '_fdr_'.$g.'_close',  true ),
+            'open2'  => get_post_meta( $post->ID, '_fdr_'.$g.'_open2',  true ),
+            'close2' => get_post_meta( $post->ID, '_fdr_'.$g.'_close2', true ),
+        ];
+        $day_hours[$g] = $h;
+        if ( $h['open'] && $h['close'] ) $has_any = true;
     }
-    echo '</table>';
+
+    // ── Reverse-engineer base + override ──
+    $base_open = $base_close = $base_open2 = $base_close2 = '';
+    $base_key  = '';
+    $active_days = [];
+    $overrides   = [];
+
+    if ( $has_any ) {
+        foreach ( $giorni as $g ) {
+            if ( $day_hours[$g]['open'] && $day_hours[$g]['close'] ) $active_days[] = $g;
+        }
+        $freq = [];
+        foreach ( $active_days as $g ) {
+            $h   = $day_hours[$g];
+            $key = $h['open'].'|'.$h['close'].'|'.$h['open2'].'|'.$h['close2'];
+            $freq[$key] = ( $freq[$key] ?? 0 ) + 1;
+        }
+        arsort( $freq );
+        $base_key = array_key_first( $freq );
+        [ $base_open, $base_close, $base_open2, $base_close2 ] = explode( '|', $base_key );
+        foreach ( $active_days as $g ) {
+            $h   = $day_hours[$g];
+            $key = $h['open'].'|'.$h['close'].'|'.$h['open2'].'|'.$h['close2'];
+            if ( $key !== $base_key ) $overrides[$g] = $h;
+        }
+    } else {
+        $active_days = [ 'Monday','Tuesday','Wednesday','Thursday','Friday' ]; // default nuovi post
+    }
+    ?>
+    <style>
+    .fdr-oh-section{margin-bottom:18px}
+    .fdr-oh-section h4{color:#004A99;font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin:0 0 8px;padding-bottom:4px;border-bottom:2px solid #FDC513}
+    .fdr-oh-row{display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:13px}
+    .fdr-oh-row label{width:90px;color:#666;font-size:12px;flex-shrink:0}
+    .fdr-oh-row input[type=time]{border:1px solid #ddd;border-radius:4px;padding:4px 6px;font-size:13px}
+    .fdr-oh-sep{color:#aaa;font-size:12px}
+    .fdr-day-row{padding:5px 0;border-bottom:1px solid #f5f5f5}
+    .fdr-day-header{display:flex;align-items:center;gap:10px}
+    .fdr-day-label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:600;width:110px}
+    .fdr-day-label input[type=checkbox]{width:15px;height:15px;flex-shrink:0}
+    .fdr-cust-btn{font-size:11px;color:#7c3aed;background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;font-family:inherit}
+    .fdr-override-box{background:#faf5ff;border:1px solid #ddd6fe;border-radius:6px;padding:10px 12px;margin-top:6px}
+    .fdr-override-title{font-size:11px;color:#7c3aed;font-weight:700;margin:0 0 8px;display:block}
+    .fdr-close-btn{font-size:11px;color:#7c3aed;background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;font-family:inherit;margin-top:4px}
+    </style>
+
+    <div class="fdr-oh-section">
+        <h4>Orario base</h4>
+        <p style="color:#888;font-size:12px;margin:0 0 10px">Si applica a tutti i giorni attivi (salvo personalizzazioni).</p>
+        <div class="fdr-oh-row">
+            <label>Mattina</label>
+            <input type="time" name="fdr_base_open"  value="<?php echo esc_attr($base_open); ?>">
+            <span class="fdr-oh-sep">–</span>
+            <input type="time" name="fdr_base_close" value="<?php echo esc_attr($base_close); ?>">
+        </div>
+        <div class="fdr-oh-row">
+            <label style="color:#bbb">Pomeriggio</label>
+            <input type="time" name="fdr_base_open2"  value="<?php echo esc_attr($base_open2); ?>">
+            <span class="fdr-oh-sep">–</span>
+            <input type="time" name="fdr_base_close2" value="<?php echo esc_attr($base_close2); ?>">
+        </div>
+    </div>
+
+    <div class="fdr-oh-section">
+        <h4>Giorni attivi</h4>
+        <?php foreach ( $giorni as $i => $g ):
+            $is_active    = in_array( $g, $active_days, true );
+            $has_override = isset( $overrides[$g] );
+            $ov = $has_override ? $overrides[$g] : [ 'open'=>'','close'=>'','open2'=>'','close2'=>'' ];
+        ?>
+        <div class="fdr-day-row">
+            <div class="fdr-day-header">
+                <label class="fdr-day-label">
+                    <input type="checkbox" name="fdr_days_active[]" value="<?php echo $g; ?>"
+                           id="fdr_day_<?php echo $g; ?>"
+                           <?php checked( $is_active ); ?>
+                           onchange="fdrDayToggle('<?php echo $g; ?>', this.checked)">
+                    <?php echo $giorni_ita[$i]; ?>
+                </label>
+                <button type="button" id="fdr-cust-<?php echo $g; ?>"
+                        class="fdr-cust-btn"
+                        onclick="fdrToggleOverride('<?php echo $g; ?>')"
+                        style="display:<?php echo $is_active ? 'inline' : 'none'; ?>">
+                    <?php echo $has_override ? '● personalizzato ▲' : '✎ personalizza'; ?>
+                </button>
+            </div>
+            <div id="fdr-ov-<?php echo $g; ?>"
+                 style="display:<?php echo $has_override ? 'block' : 'none'; ?>">
+                <div class="fdr-override-box">
+                    <span class="fdr-override-title">⚙ Orario personalizzato — <?php echo $giorni_ita[$i]; ?></span>
+                    <input type="checkbox" name="fdr_override_<?php echo $g; ?>_active" id="fdr_ovchk_<?php echo $g; ?>"
+                           value="1" <?php checked( $has_override ); ?> style="display:none">
+                    <div class="fdr-oh-row">
+                        <label>Mattina</label>
+                        <input type="time" name="fdr_override_<?php echo $g; ?>_open"  value="<?php echo esc_attr($ov['open']); ?>">
+                        <span class="fdr-oh-sep">–</span>
+                        <input type="time" name="fdr_override_<?php echo $g; ?>_close" value="<?php echo esc_attr($ov['close']); ?>">
+                    </div>
+                    <div class="fdr-oh-row">
+                        <label style="color:#bbb">Pomeriggio</label>
+                        <input type="time" name="fdr_override_<?php echo $g; ?>_open2"  value="<?php echo esc_attr($ov['open2']); ?>">
+                        <span class="fdr-oh-sep">–</span>
+                        <input type="time" name="fdr_override_<?php echo $g; ?>_close2" value="<?php echo esc_attr($ov['close2']); ?>">
+                    </div>
+                    <button type="button" class="fdr-close-btn"
+                            onclick="fdrToggleOverride('<?php echo $g; ?>')">▲ chiudi e usa orario base</button>
+                </div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+
+    <script>
+    function fdrToggleOverride(day) {
+        var box = document.getElementById('fdr-ov-' + day);
+        var chk = document.getElementById('fdr_ovchk_' + day);
+        var btn = document.getElementById('fdr-cust-' + day);
+        var open = box.style.display === 'none';
+        box.style.display = open ? 'block' : 'none';
+        chk.checked = open;
+        btn.textContent = open ? '● personalizzato ▲' : '✎ personalizza';
+    }
+    function fdrDayToggle(day, active) {
+        var btn = document.getElementById('fdr-cust-' + day);
+        if ( btn ) btn.style.display = active ? 'inline' : 'none';
+        if ( !active ) {
+            var box = document.getElementById('fdr-ov-' + day);
+            var chk = document.getElementById('fdr_ovchk_' + day);
+            if ( box ) box.style.display = 'none';
+            if ( chk ) chk.checked = false;
+            if ( btn ) btn.textContent = '✎ personalizza';
+        }
+    }
+    </script>
+    <?php
 }
 
 // ── SAVE ──────────────────────────────────────────────────────
@@ -262,13 +396,36 @@ function fdr_sedi_save_meta($post_id) {
         update_post_meta($post_id, '_fdr_extra', wp_kses_post($_POST['fdr_extra']));
     }
 
-    $giorni = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-    foreach ($giorni as $g) {
-        foreach (['_open','_close','_open2','_close2'] as $suffix) {
-            $key = 'fdr_'.$g.$suffix;
-            if (isset($_POST[$key])) {
-                update_post_meta($post_id, '_fdr_'.$g.$suffix, sanitize_text_field($_POST[$key]));
+    // ── Orari: base + giorni attivi + override per giorno ──
+    if ( array_key_exists( 'fdr_base_open', $_POST ) ) {
+        $giorni      = [ 'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday' ];
+        $active_days = isset( $_POST['fdr_days_active'] )
+            ? array_map( 'sanitize_text_field', (array) $_POST['fdr_days_active'] )
+            : [];
+        $base = [
+            'open'   => sanitize_text_field( $_POST['fdr_base_open']   ?? '' ),
+            'close'  => sanitize_text_field( $_POST['fdr_base_close']  ?? '' ),
+            'open2'  => sanitize_text_field( $_POST['fdr_base_open2']  ?? '' ),
+            'close2' => sanitize_text_field( $_POST['fdr_base_close2'] ?? '' ),
+        ];
+        foreach ( $giorni as $g ) {
+            if ( ! in_array( $g, $active_days, true ) ) {
+                update_post_meta( $post_id, '_fdr_'.$g.'_open',   '' );
+                update_post_meta( $post_id, '_fdr_'.$g.'_close',  '' );
+                update_post_meta( $post_id, '_fdr_'.$g.'_open2',  '' );
+                update_post_meta( $post_id, '_fdr_'.$g.'_close2', '' );
+                continue;
             }
+            $h = ( ! empty( $_POST[ 'fdr_override_'.$g.'_active' ] ) ) ? [
+                'open'   => sanitize_text_field( $_POST[ 'fdr_override_'.$g.'_open'   ] ?? '' ),
+                'close'  => sanitize_text_field( $_POST[ 'fdr_override_'.$g.'_close'  ] ?? '' ),
+                'open2'  => sanitize_text_field( $_POST[ 'fdr_override_'.$g.'_open2'  ] ?? '' ),
+                'close2' => sanitize_text_field( $_POST[ 'fdr_override_'.$g.'_close2' ] ?? '' ),
+            ] : $base;
+            update_post_meta( $post_id, '_fdr_'.$g.'_open',   $h['open'] );
+            update_post_meta( $post_id, '_fdr_'.$g.'_close',  $h['close'] );
+            update_post_meta( $post_id, '_fdr_'.$g.'_open2',  $h['open2'] );
+            update_post_meta( $post_id, '_fdr_'.$g.'_close2', $h['close2'] );
         }
     }
 }
