@@ -15,7 +15,7 @@ if (!$pubblica && !current_user_can('edit_posts')) {
 
 get_header();
 
-$name      = get_the_title();
+$name      = preg_replace( '/\s*\(\d+\)$/', '', get_the_title() );
 $company   = get_post_meta($post_id, '_fdr_company',   true);
 $address   = get_post_meta($post_id, '_fdr_address',   true);
 $zip       = get_post_meta($post_id, '_fdr_zip',       true);

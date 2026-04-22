@@ -58,7 +58,7 @@ function fdr_sedi_shortcode($atts) {
             $address = get_post_meta($p->ID, '_fdr_address', true);
             $city    = get_post_meta($p->ID, '_fdr_city', true);
             $premium = (int) get_post_meta($p->ID, '_fdr_premium', true);
-            $name    = $p->post_title;
+            $name    = preg_replace( '/\s*\(\d+\)$/', '', $p->post_title );
 
             $nazionale    = (int) get_post_meta($p->ID, '_fdr_nazionale', true);
             $is_nazionale = ($nazionale === 1) || ($premium === 1 && stripos($name, 'Nazionale') !== false);
