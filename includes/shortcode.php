@@ -3,17 +3,8 @@
  * FDR Sedi — Shortcode [fdr_sedi]
  * Cache: transient 12h, invalidata al salvataggio/cancellazione di qualsiasi sede.
  */
+// Le funzioni cache e add_action sono in includes/utils.php
 add_shortcode('fdr_sedi', 'fdr_sedi_shortcode');
-
-add_action('save_post_fdr_sede', 'fdr_sedi_clear_cache');
-add_action('delete_post',        'fdr_sedi_clear_cache_on_delete');
-
-function fdr_sedi_clear_cache() {
-    delete_transient('fdr_sedi_json');
-}
-function fdr_sedi_clear_cache_on_delete($post_id) {
-    if (get_post_type($post_id) === 'fdr_sede') delete_transient('fdr_sedi_json');
-}
 
 function fdr_sedi_shortcode($atts) {
     $atts = shortcode_atts(['regione' => ''], $atts);
@@ -24,7 +15,7 @@ function fdr_sedi_shortcode($atts) {
     $regioni_options = '';
 
     if ($use_cache) {
-        $cached = get_transient('fdr_sedi_json');
+        $cached = get_transient(FDR_SEDI_CACHE_KEY);
         if (is_array($cached)) {
             $sedi_json       = $cached['json'];
             $count           = $cached['count'];
@@ -57,20 +48,7 @@ function fdr_sedi_shortcode($atts) {
             $lng = get_post_meta($p->ID, '_fdr_lng', true);
             if (!$lat || !$lng) continue;
 
-            $giorni     = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-            $giorni_ita = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
-            $orari = '';
-            foreach ($giorni as $i => $g) {
-                $o1 = get_post_meta($p->ID, '_fdr_'.$g.'_open',  true);
-                $c1 = get_post_meta($p->ID, '_fdr_'.$g.'_close', true);
-                $o2 = get_post_meta($p->ID, '_fdr_'.$g.'_open2', true);
-                $c2 = get_post_meta($p->ID, '_fdr_'.$g.'_close2',true);
-                if ($o1 && $c1) {
-                    $riga = $giorni_ita[$i].': '.$o1.'-'.$c1;
-                    if ($o2 && $c2) $riga .= ' / '.$o2.'-'.$c2;
-                    $orari .= $riga.' ';
-                }
-            }
+            $hours_display = fdr_hours_display($p->ID);
 
             $regione_terms = get_the_terms($p->ID, 'fdr_regione');
             $regione = ($regione_terms && !is_wp_error($regione_terms))
@@ -99,8 +77,8 @@ function fdr_sedi_shortcode($atts) {
                 'email'        => get_post_meta($p->ID, '_fdr_email', true),
                 'website'      => get_post_meta($p->ID, '_fdr_website', true),
                 'gmaps'        => 'https://maps.google.com/?q=' . $gmaps_query,
-                'orari'        => trim($orari),
-                'note'         => get_post_meta($p->ID, '_fdr_description', true),
+                'hours_display' => $hours_display,
+                'note'          => get_post_meta($p->ID, '_fdr_description', true),
                 'lat'          => (float)$lat,
                 'lng'          => (float)$lng,
                 'premium'      => $premium,
@@ -128,7 +106,7 @@ function fdr_sedi_shortcode($atts) {
         $count     = count($sedi);
 
         if ($use_cache) {
-            set_transient('fdr_sedi_json', [
+            set_transient(FDR_SEDI_CACHE_KEY, [
                 'json'    => $sedi_json,
                 'count'   => $count,
                 'regioni' => $regioni_options,
@@ -174,6 +152,9 @@ function fdr_sedi_shortcode($atts) {
     .fdr-popup-gmaps { display: inline-block; margin-top: 8px; background: #FDC513; color: #004A99 !important; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none !important; }
     .fdr-popup-gmaps:hover { background: #e6b000; color: #004A99 !important; text-decoration: none !important; }
     .fdr-no-results { padding: 40px; text-align: center; color: #999; font-size: 15px; }
+    .fdr-hours { display: flex; gap: 8px; align-items: baseline; margin-bottom: 3px; line-height: 1.3; }
+    .fdr-day  { font-weight: 700; color: #333; font-size: 12px; min-width: 58px; flex-shrink: 0; }
+    .fdr-time { color: #444; font-size: 12px; }
     @media (max-width: 768px) {
         .fdr-sedi-layout { grid-template-columns: 1fr; height: auto; }
         .fdr-sedi-list { height: 300px; }
@@ -247,7 +228,12 @@ function fdr_sedi_shortcode($atts) {
             if (s.tel)     h += '<div class="fdr-popup-row">📞 <a href="tel:' + s.tel + '" class="fdr-popup-link">' + s.tel + '</a></div>';
             if (s.email)   h += '<div class="fdr-popup-row">✉️ <a href="mailto:' + s.email + '" class="fdr-popup-link">' + s.email + '</a></div>';
             if (s.website && s.website !== '') h += '<div class="fdr-popup-row">🌐 <a href="' + s.website + '" target="_blank" class="fdr-popup-link">Sito web</a></div>';
-            if (s.orari)   h += '<div class="fdr-popup-row">🕐 <strong>' + s.orari + '</strong></div>';
+            if (s.hours_display && s.hours_display.length) {
+                var hRows = s.hours_display.map(function(r) {
+                    return '<div class="fdr-hours"><span class="fdr-day">' + r.days + '</span><span class="fdr-time">' + r.hours + '</span></div>';
+                }).join('');
+                h += '<div class="fdr-popup-row" style="align-items:flex-start">🕐 <div style="flex:1">' + hRows + '</div></div>';
+            }
             if (s.note)    h += '<div class="fdr-popup-row"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#4caf50;flex-shrink:0;margin-top:4px"></span><span style="color:#555;font-style:italic">' + s.note + '</span></div>';
             h += '<a href="' + s.gmaps + '" target="_blank" class="fdr-popup-gmaps">📍 Apri in Google Maps</a>';
             return h;
